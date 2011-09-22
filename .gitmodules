@@ -1,0 +1,3 @@
+[submodule "twrs"]
+	path = twrs
+	url = git@github.com:fsw/twr3examples.git
