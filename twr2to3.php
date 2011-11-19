@@ -4,7 +4,7 @@
 //require_once('File/Archive.php');     
 
 
-error_reporting( E_ALL ); 
+error_reporting( 0 ); //E_ALL ); 
 
 $input_file = "input.twr";
 $output_dir = "output/";
@@ -42,7 +42,30 @@ function appendElement( $elements_xml, $xml ){
 	
 	$element_xml->addChild('uid',$xml->uid);
 	$element_xml->addChild('name',$xml->name);
+	if( $xml->description )
+	  $element_xml->addChild('description')->addChild('short',$xml->description);
 	
+	
+	if( $xml->thumbnail )
+	  $element_xml->addChild( 'thumbnail' )->addAttribute( 'src', $xml->thumbnail );
+	
+	
+	$baseCost = (int)$xml->baseCost;
+	$costPerUnit = (int)$xml->costPerUnit;
+
+	$xml->addChild( 'cost', $baseCost + $costPerUnit )->addAttribute( 'id', 'pts' );
+	//this is most important change from TWR 2 to 3 so this can be faulty 
+	if( $costPerUnit )
+	  $xml->addAttribute( 'size', 'inherit' );
+	
+	
+	if($xml->extraFields){
+		$stats = $element_xml->addChild('stats');
+		foreach($xml->extraFields->field as $field){
+			$stats->addChild('stat',$field->value)->addAttribute('id',ereg_replace("[^A-Za-z0-9]", "",$field->name));
+		}	
+	}
+
 	if($xml->categories)
 		foreach($xml->categories->category as $category){
 			
@@ -86,24 +109,56 @@ if($info_xml->getName()!='ruleset')
 if((!$info_xml->name) || (!$info_xml->uid))
 	die('lack of one or more of required fields: name,uid');
 
-$info_out_xml = new SimpleXMLElement("<ruleset></ruleset>");
+$info_out_xml = new SimpleXMLElement( "<ruleset></ruleset>" );
 //TODO xsi is missing!
-$info_out_xml->addAttribute('xsi:schemaLocation', 'armycalc http://armycalc.com/xmls/twr3info.xsd');
-$info_out_xml->addAttribute('version', '3.0');
-$info_out_xml->addChild('uid','armycalc.twr3.autoconvert.'.$info_xml->uid);
-$info_out_xml->addChild('revision','1');
+$info_out_xml->addAttribute( 'xmlns', 'armycalc' );
+$info_out_xml->addAttribute( 'xsi:schemaLocation', 'armycalc http://armycalc.com/xmls/twr3info.xsd', 'http://www.w3.org/2001/XMLSchema-instance' );
+$info_out_xml->addAttribute( 'version', '3.0' );
+$identity = $info_out_xml->addChild( 'identity' );
+$identity->addChild( 'uid', 'armycalc.twr3.autoconvert.'.$info_xml->uid );
+$identity->addChild( 'revision', $info_xml->revision );
+$identity->addChild( 'netid', 'unknown' );
+$identity->addChild( 'origin', 'unknown' );
+//$identity->addChild( 'md5', 'unknown' );
 
-$lang = $info_out_xml->addChild('languages')->addChild('language');
-$lang->addAttribute('id','en');
-$lang->addAttribute('default','true');
-$lang->addChild('transtab')->addAttribute('src','english.xml');
-$lang->addChild('name','English');
 
-$english = new SimpleXMLElement("<transtab></transtab>");
+$langs = $info_out_xml->addChild('languages');
+$lang1 = $langs->addChild('language');
+$lang1->addAttribute('id','en');
+$lang1->addAttribute('default','true');
+$lang1->addChild('transtab')->addAttribute('src','english_transtab.xml');
+$lang1->addChild('name','English');
+
+$lang2 = $langs->addChild('language');
+$lang2->addAttribute('id','xx');
+$lang2->addChild('transtab')->addAttribute('src','example_transtab.xml');
+$lang2->addChild('name','Example Language');
+
+
+$english_transtab = new SimpleXMLElement("<transtab></transtab>");
+$example_transtab = new SimpleXMLElement("<transtab></transtab>");
+$example_transtab->addChild('text',"Example translation 1")->addAttribute('id','SHORTDESC');
+$example_transtab->addChild('text',"Example translation 2")->addAttribute('id','LONGDESC');
+$example_transtab->addChild('text',"Example translation 3")->addAttribute('id','AUTO_CONVERTED_ERROR');
+
+
+
 
 $info_out_xml->addChild('name',$info_xml->name);
-$info_out_xml->addChild('author',$info_xml->author);
-$info_out_xml->addChild('description',$info_xml->description);
+
+$author = $info_out_xml->addChild('author');
+  $author->addChild('name', $info_xml->author);
+  $author->addChild('email', '');
+  $author->addChild('netid', 'unknown');
+  $author->addChild('login', 'unknown');
+  $author->addChild('url', 'unknown');
+
+
+$description = $info_out_xml->addChild('description',$info_xml->description);
+$info_out_xml->addChild('full',$info_xml->description)->addAttribute('tid','LONGDESC');
+$info_out_xml->addChild('short', 
+  (strlen($info_xml->description)>100 ? substr($info_xml->description,0,100)."..." : $info_xml->description ))->addAttribute('tid','SHORTDESC');
+
 $info_out_xml->addChild('icon')->addAttribute('src','icon.png');
 
 
@@ -126,7 +181,15 @@ $default_cost->addChild('default',0);
 $info_out_xml->addChild('defaultArmyName',$info_xml->defaultArmyName);
 $info_out_xml->addChild('defaultArmySize')->addChild('cost',$info_xml->defaultArmySize)->addAttribute('id','pts');
 
-$info_out_xml->addChild('errors');
+$default_error = $info_out_xml->addChild('errors')->addChild('error');
+  $default_error->addAttribute('class','warning');
+  $default_error->addAttribute('id','auto_converted');
+  $default_error->addChild('message','This ruleset was auto converted and does not provide a validator')->addAttribute('tid','AUTO_CONVERTED_ERROR');
+
+
+
+
+
 $mainmenu_xml = $info_out_xml->addChild('mainmenu');
 $mainmenu_array = array();
 
@@ -149,6 +212,7 @@ foreach($info_xml->files->units->file as $file){
 //<file><name></name><path>units.xml</path></file>
 //</units>
 
+//appendElements have also populated menu with categories
 foreach( $mainmenu_array as $id=>$name){
 	$menu_xml = $mainmenu_xml->addChild('menu');
 	$menu_xml->addAttribute('id',$id);
@@ -176,10 +240,19 @@ function formatXml($simpleXml){
 
 }
 
-file_put_contents($output_dir."info.xml", formatXml($info_out_xml));
-file_put_contents($output_dir."elements.xml", formatXml($elements_xml));
-file_put_contents($output_dir."english.xml", formatXml($english));
-file_put_contents($output_dir."validator.js", "//unfortunatell auto conversion does not support validation scripts and you have to revrite it :(");
+function ac_put_contents($path,$contents){
+
+  global $output_dir;
+  file_put_contents( $output_dir.$path, $contents );
+  echo "written ".strlen($contents)." bytes to $path\n";
+
+}
+
+ac_put_contents("info.xml", formatXml($info_out_xml));
+ac_put_contents("elements.xml", formatXml($elements_xml));
+ac_put_contents("english_transtab.xml", formatXml($english_transtab));
+ac_put_contents("example_transtab.xml", formatXml($example_transtab));
+ac_put_contents("validator.js", "//unfortunatell auto conversion does not support validation scripts and you have to revrite it :(\narmy.toggleError('auto_converted',true);");
 
 
 
